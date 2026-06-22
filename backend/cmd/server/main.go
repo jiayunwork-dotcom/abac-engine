@@ -68,13 +68,13 @@ func main() {
 
 	h := handlers.NewHandler(repo, abacEngine, dc, rl, sm, aw, adminToken)
 
-	initData(repo, adminToken)
-
-	sm.Start()
-
 	if err := autoMigrate(pool); err != nil {
 		log.Printf("Migration warning: %v", err)
 	}
+
+	initData(repo, adminToken)
+
+	sm.Start()
 
 	r := gin.Default()
 	r.Use(middleware.CORSMiddleware())
