@@ -1,0 +1,243 @@
+# ============================================================
+# ABAC 策略示例集
+# 可在前端"策略编辑器"中直接粘贴使用
+# ============================================================
+
+# ------------------------------------------------------------
+# 示例 1: 财务部门可以读写本部门的财务文档
+# ------------------------------------------------------------
+id: pol-finance-docs-rw
+description: 财务部门对财务类型文档拥有读写权限
+level: tenant
+project_id: proj-finance
+target:
+  subject:
+    logic: AND
+    conditions:
+      - attribute: department
+        operator: equals
+        value: finance
+  resource:
+    logic: AND
+    conditions:
+      - attribute: type
+        operator: equals
+        value: document
+      - attribute: tags
+        operator: contains
+        value: finance
+  action:
+    logic: AND
+    conditions:
+      - attribute: name
+        operator: in
+        value:
+          - read
+          - write
+effect: permit
+priority: 500
+status: enabled
+resource_types:
+  - document
+actions:
+  - read
+  - write
+
+---
+# ------------------------------------------------------------
+# 示例 2: 职级≥6的主管或管理员才能访问机密文档
+# ------------------------------------------------------------
+id: pol-confidential-access
+description: 机密等级文档仅主管及以上职级或管理员可访问
+level: tenant
+target:
+  resource:
+    logic: AND
+    conditions:
+      - attribute: sensitivity_level
+        operator: equals
+        value: confidential
+  subject:
+    logic: OR
+    conditions: []
+    groups:
+      - logic: AND
+        conditions:
+          - attribute: level
+            operator: gte
+            value: 6
+      - logic: AND
+        conditions:
+          - attribute: is_admin
+            operator: equals
+            value: true
+effect: permit
+priority: 800
+status: enabled
+actions:
+  - read
+  - write
+
+---
+# ------------------------------------------------------------
+# 示例 3: 禁止非常用IP段 + 无MFA认证的访问
+# ------------------------------------------------------------
+id: pol-mfa-required-external
+description: 公司内网以外的访问必须通过MFA二次验证
+level: tenant
+target:
+  environment:
+    logic: AND
+    conditions:
+      - attribute: client_ip
+        operator: ip_in_cidr
+        value:
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+          - 192.168.0.0/16
+      - attribute: is_mfa_authenticated
+        operator: equals
+        value: false
+effect: deny
+priority: 950
+status: enabled
+force_deny: false
+resource_types:
+  - "*"
+
+---
+# ------------------------------------------------------------
+# 示例 4: 工作日工作时间(9:00-18:00)内允许普通员工审批
+# ------------------------------------------------------------
+id: pol-approve-office-hours
+description: 仅工作日(周一至周五) 9:00-18:00 允许审批操作
+level: tenant
+target:
+  action:
+    logic: AND
+    conditions:
+      - attribute: name
+        operator: equals
+        value: approve
+  subject:
+    logic: AND
+    conditions:
+      - attribute: roles
+        operator: contains
+        value: approver
+  environment:
+    logic: AND
+    conditions:
+      - attribute: timestamp
+        operator: time_range
+        value:
+          start: "09:00"
+          end: "18:00"
+      - attribute: timestamp
+        operator: weekday_range
+        value:
+          - 1
+          - 2
+          - 3
+          - 4
+          - 5
+effect: permit
+priority: 400
+status: enabled
+actions:
+  - approve
+
+---
+# ------------------------------------------------------------
+# 示例 5: 项目级策略 - 仅项目成员可读写项目资源
+# ------------------------------------------------------------
+id: proj-alpha-member-access
+description: Alpha项目成员才可读写该项目资源
+level: project
+project_id: proj-alpha
+target:
+  subject:
+    logic: AND
+    conditions:
+      - attribute: tags
+        operator: intersects
+        value:
+          - proj-alpha
+          - proj-alpha-admin
+  resource:
+    logic: AND
+    conditions:
+      - attribute: project_id
+        operator: equals
+        value: proj-alpha
+effect: permit
+priority: 600
+status: enabled
+actions:
+  - read
+  - write
+  - delete
+
+---
+# ------------------------------------------------------------
+# 示例 6: 基于正则表达式的用户ID匹配（批量用户组）
+# ------------------------------------------------------------
+id: pol-service-accounts
+description: 所有以svc_开头的服务账号拥有只读API访问权限
+level: tenant
+target:
+  subject:
+    logic: AND
+    conditions:
+      - attribute: user_id
+        operator: regex_match
+        value: "^svc_[a-z0-9]+$"
+  resource:
+    logic: AND
+    conditions:
+      - attribute: type
+        operator: equals
+        value: api
+  action:
+    logic: AND
+    conditions:
+      - attribute: name
+        operator: equals
+        value: read
+effect: permit
+priority: 300
+status: enabled
+resource_types:
+  - api
+actions:
+  - read
+
+---
+# ------------------------------------------------------------
+# 示例 7: 资源创建超过30天的归档数据禁止删除
+# ------------------------------------------------------------
+id: pol-protect-archived-data
+description: 超过30天的归档数据任何人不能删除（包括管理员）
+level: tenant
+target:
+  resource:
+    logic: AND
+    conditions:
+      - attribute: status
+        operator: equals
+        value: archived
+      - attribute: created_at
+        operator: regex_match
+        value: "^20[0-2][0-9]-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])"
+  action:
+    logic: AND
+    conditions:
+      - attribute: name
+        operator: equals
+        value: delete
+effect: deny
+priority: 999
+status: enabled
+force_deny: false
+actions:
+  - delete
