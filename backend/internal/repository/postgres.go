@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"abac-engine/internal/models"
+	"abac-engine/pkg/expression"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -67,6 +68,7 @@ func (r *PostgresRepository) scanPolicy(row pgx.Row) (*models.Policy, error) {
 	if err := json.Unmarshal([]byte(targetJSON), &p.Target); err != nil {
 		return nil, fmt.Errorf("unmarshal target: %v", err)
 	}
+	expression.CleanTarget(&p.Target)
 	p.ResourceTypes = resourceTypes
 	p.Actions = actions
 	return &p, nil

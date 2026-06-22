@@ -22,7 +22,7 @@ func (g *GroupEvaluator) EvaluateGroup(group *models.ConditionGroup, attrs map[s
 		return true, nil
 	}
 	if len(group.Conditions) == 0 && len(group.Groups) == 0 {
-		return true, nil
+		return false, nil
 	}
 
 	logic := strings.ToUpper(group.Logic)
@@ -173,4 +173,38 @@ func IsTargetEmpty(t models.Target) bool {
 		IsGroupEmpty(t.Resource) &&
 		IsGroupEmpty(t.Action) &&
 		IsGroupEmpty(t.Environment)
+}
+
+func CleanEmptyGroup(g *models.ConditionGroup) *models.ConditionGroup {
+	if g == nil {
+		return nil
+	}
+	for i := range g.Groups {
+		g.Groups[i] = *CleanEmptyGroup(&g.Groups[i])
+	}
+	cleanedConds := make([]models.Condition, 0, len(g.Conditions))
+	for _, c := range g.Conditions {
+		if c.Attribute != "" && c.Operator != "" {
+			cleanedConds = append(cleanedConds, c)
+		}
+	}
+	g.Conditions = cleanedConds
+	cleanedGroups := make([]models.ConditionGroup, 0, len(g.Groups))
+	for _, sg := range g.Groups {
+		if !IsGroupEmpty(&sg) {
+			cleanedGroups = append(cleanedGroups, sg)
+		}
+	}
+	g.Groups = cleanedGroups
+	if len(g.Conditions) == 0 && len(g.Groups) == 0 {
+		return nil
+	}
+	return g
+}
+
+func CleanTarget(t *models.Target) {
+	t.Subject = CleanEmptyGroup(t.Subject)
+	t.Resource = CleanEmptyGroup(t.Resource)
+	t.Action = CleanEmptyGroup(t.Action)
+	t.Environment = CleanEmptyGroup(t.Environment)
 }

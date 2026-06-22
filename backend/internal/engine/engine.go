@@ -177,11 +177,11 @@ func (e *ABACEngine) evaluatePolicies(snap *PolicySnapshot, candidates []int, re
 }
 
 func (e *ABACEngine) matchPolicy(p *models.Policy, req *models.AccessRequest) bool {
-	hasAnyConstraint := !expression.IsTargetEmpty(p.Target) ||
-		(len(p.ResourceTypes) > 0 && p.ResourceTypes[0] != "*") ||
-		(len(p.Actions) > 0 && p.Actions[0] != "*")
+	hasTargetCondition := !expression.IsTargetEmpty(p.Target)
+	hasResourceTypeConstraint := hasNonWildcardSlice(p.ResourceTypes)
+	hasActionConstraint := hasNonWildcardSlice(p.Actions)
 
-	if !hasAnyConstraint {
+	if !hasTargetCondition && !hasResourceTypeConstraint && !hasActionConstraint {
 		return false
 	}
 
@@ -203,20 +203,17 @@ func (e *ABACEngine) matchPolicy(p *models.Policy, req *models.AccessRequest) bo
 		if err != nil || !ok {
 			return false
 		}
-	} else {
-		if len(p.Actions) > 0 {
-			found := false
-			actLow := strings.ToLower(req.Action)
-			for _, a := range p.Actions {
-				la := strings.ToLower(a)
-				if la == "*" || la == actLow {
-					found = true
-					break
-				}
+	} else if hasActionConstraint {
+		found := false
+		actLow := strings.ToLower(req.Action)
+		for _, a := range p.Actions {
+			if strings.ToLower(a) == actLow {
+				found = true
+				break
 			}
-			if !found {
-				return false
-			}
+		}
+		if !found {
+			return false
 		}
 	}
 	if p.Target.Environment != nil {
@@ -233,6 +230,15 @@ func (e *ABACEngine) matchPolicy(p *models.Policy, req *models.AccessRequest) bo
 		}
 	}
 	return true
+}
+
+func hasNonWildcardSlice(s []string) bool {
+	for _, v := range s {
+		if v != "*" {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *ABACEngine) combineDecisions(matched []matchedPolicy, algo models.CombiningAlgorithm) (models.Effect, []string) {

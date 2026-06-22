@@ -214,8 +214,8 @@ func (h *Handler) ValidatePolicy(c *gin.Context) {
 	}
 
 	hasConstraint := !expression.IsTargetEmpty(p.Target) ||
-		(len(p.ResourceTypes) > 0 && p.ResourceTypes[0] != "*") ||
-		(len(p.Actions) > 0 && p.Actions[0] != "*")
+		hasNonWildcardSlice(p.ResourceTypes) ||
+		hasNonWildcardSlice(p.Actions)
 	if !hasConstraint {
 		errs = append(errs, "policy has no constraints: at least one target condition or non-wildcard resource_type/action is required")
 	}
@@ -276,8 +276,8 @@ func (h *Handler) CreatePolicy(c *gin.Context) {
 	}
 
 	hasConstraint := !expression.IsTargetEmpty(p.Target) ||
-		(len(p.ResourceTypes) > 0 && p.ResourceTypes[0] != "*") ||
-		(len(p.Actions) > 0 && p.Actions[0] != "*")
+		hasNonWildcardSlice(p.ResourceTypes) ||
+		hasNonWildcardSlice(p.Actions)
 	if !hasConstraint {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "policy has no constraints: at least one target condition or non-wildcard resource_type/action is required"})
 		return
@@ -339,8 +339,8 @@ func (h *Handler) UpdatePolicy(c *gin.Context) {
 	p.Version = existing.Version
 
 	hasConstraint := !expression.IsTargetEmpty(p.Target) ||
-		(len(p.ResourceTypes) > 0 && p.ResourceTypes[0] != "*") ||
-		(len(p.Actions) > 0 && p.Actions[0] != "*")
+		hasNonWildcardSlice(p.ResourceTypes) ||
+		hasNonWildcardSlice(p.Actions)
 	if !hasConstraint {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "policy has no constraints: at least one target condition or non-wildcard resource_type/action is required"})
 		return
@@ -720,5 +720,15 @@ func parsePolicyYAML(yamlStr string, p *models.Policy) error {
 		return err
 	}
 	normalizePolicyTarget(p)
+	expression.CleanTarget(&p.Target)
 	return nil
+}
+
+func hasNonWildcardSlice(s []string) bool {
+	for _, v := range s {
+		if v != "*" {
+			return true
+		}
+	}
+	return false
 }
