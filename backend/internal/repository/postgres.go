@@ -148,6 +148,9 @@ func (r *PostgresRepository) CreatePolicy(ctx context.Context, policy *models.Po
 	if err != nil {
 		return err
 	}
+	if err := verifyTargetRoundtrip(policy.Target, targetJSON); err != nil {
+		return fmt.Errorf("target integrity check failed: %v", err)
+	}
 	now := time.Now()
 	policy.CreatedAt = now
 	policy.UpdatedAt = now
@@ -157,7 +160,7 @@ func (r *PostgresRepository) CreatePolicy(ctx context.Context, policy *models.Po
 		INSERT INTO policies (id, tenant_id, project_id, level, description, target,
 			effect, priority, status, version, force_deny, created_at, updated_at,
 			resource_types, actions)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 	`
 	_, err = r.pool.Exec(ctx, query,
 		policy.ID, policy.TenantID, policy.ProjectID, policy.Level, policy.Description,
@@ -176,12 +179,15 @@ func (r *PostgresRepository) UpdatePolicy(ctx context.Context, policy *models.Po
 	if err != nil {
 		return err
 	}
+	if err := verifyTargetRoundtrip(policy.Target, targetJSON); err != nil {
+		return fmt.Errorf("target integrity check failed: %v", err)
+	}
 	policy.UpdatedAt = time.Now()
 	policy.Version += 1
 
 	query := `
 		UPDATE policies SET
-			project_id = $1, description = $2, target = $3, effect = $4,
+			project_id = $1, description = $2, target = $3::jsonb, effect = $4,
 			priority = $5, status = $6, version = $7, force_deny = $8,
 			updated_at = $9, resource_types = $10, actions = $11
 		WHERE id = $12 AND tenant_id = $13
@@ -502,4 +508,52 @@ func (r *PostgresRepository) ListTenantAllPolicies(ctx context.Context, tenantID
 		policies = append(policies, *p)
 	}
 	return policies, rows.Err()
+}
+
+func verifyTargetRoundtrip(orig models.Target, targetJSON []byte) error {
+	var restored models.Target
+	if err := json.Unmarshal(targetJSON, &restored); err != nil {
+		return fmt.Errorf("roundtrip unmarshal failed: %v", err)
+	}
+	expression.CleanTarget(&restored)
+	origCopy := orig
+	expression.CleanTarget(&origCopy)
+	dims := []struct {
+		name   string
+		before *models.ConditionGroup
+		after  *models.ConditionGroup
+	}{
+		{"subject", origCopy.Subject, restored.Subject},
+		{"resource", origCopy.Resource, restored.Resource},
+		{"action", origCopy.Action, restored.Action},
+		{"environment", origCopy.Environment, restored.Environment},
+	}
+	for _, d := range dims {
+		beforeEmpty := expression.IsGroupEmpty(d.before)
+		afterEmpty := expression.IsGroupEmpty(d.after)
+		if beforeEmpty != afterEmpty {
+			return fmt.Errorf("%s dimension condition lost: before empty=%v, after empty=%v (json=%s)",
+				d.name, beforeEmpty, afterEmpty, string(targetJSON))
+		}
+		if !beforeEmpty && !afterEmpty {
+			beforeCount := countConditionsInGroup(d.before)
+			afterCount := countConditionsInGroup(d.after)
+			if beforeCount != afterCount {
+				return fmt.Errorf("%s condition count mismatch: before=%d, after=%d (json=%s)",
+					d.name, beforeCount, afterCount, string(targetJSON))
+			}
+		}
+	}
+	return nil
+}
+
+func countConditionsInGroup(g *models.ConditionGroup) int {
+	if g == nil {
+		return 0
+	}
+	count := len(g.Conditions)
+	for i := range g.Groups {
+		count += countConditionsInGroup(&g.Groups[i])
+	}
+	return count
 }

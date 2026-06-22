@@ -177,12 +177,47 @@ func (e *ABACEngine) evaluatePolicies(snap *PolicySnapshot, candidates []int, re
 }
 
 func (e *ABACEngine) matchPolicy(p *models.Policy, req *models.AccessRequest) bool {
-	hasTargetCondition := !expression.IsTargetEmpty(p.Target)
-	hasResourceTypeConstraint := hasNonWildcardSlice(p.ResourceTypes)
+	targetEmpty := expression.IsTargetEmpty(p.Target)
+	hasResTypeConstraint := hasNonWildcardSlice(p.ResourceTypes)
 	hasActionConstraint := hasNonWildcardSlice(p.Actions)
 
-	if !hasTargetCondition && !hasResourceTypeConstraint && !hasActionConstraint {
+	if targetEmpty && !hasResTypeConstraint && !hasActionConstraint {
 		return false
+	}
+
+	if hasResTypeConstraint {
+		reqResType, _ := req.Resource["type"].(string)
+		reqResType = strings.ToLower(reqResType)
+		matched := false
+		for _, rt := range p.ResourceTypes {
+			if strings.ToLower(rt) == reqResType {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	if p.Target.Action != nil {
+		actionMap := map[string]interface{}{"name": req.Action}
+		ok, err := e.groupEval.EvaluateGroup(p.Target.Action, actionMap)
+		if err != nil || !ok {
+			return false
+		}
+	} else if hasActionConstraint {
+		reqAction := strings.ToLower(req.Action)
+		matched := false
+		for _, a := range p.Actions {
+			if strings.ToLower(a) == reqAction {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
 	}
 
 	if p.Target.Subject != nil {
@@ -191,31 +226,14 @@ func (e *ABACEngine) matchPolicy(p *models.Policy, req *models.AccessRequest) bo
 			return false
 		}
 	}
+
 	if p.Target.Resource != nil {
 		ok, err := e.groupEval.EvaluateGroup(p.Target.Resource, req.Resource)
 		if err != nil || !ok {
 			return false
 		}
 	}
-	if p.Target.Action != nil {
-		actionMap := map[string]interface{}{"name": req.Action}
-		ok, err := e.groupEval.EvaluateGroup(p.Target.Action, actionMap)
-		if err != nil || !ok {
-			return false
-		}
-	} else if hasActionConstraint {
-		found := false
-		actLow := strings.ToLower(req.Action)
-		for _, a := range p.Actions {
-			if strings.ToLower(a) == actLow {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
+
 	if p.Target.Environment != nil {
 		envMap := make(map[string]interface{})
 		for k, v := range req.Environment {
@@ -229,6 +247,7 @@ func (e *ABACEngine) matchPolicy(p *models.Policy, req *models.AccessRequest) bo
 			return false
 		}
 	}
+
 	return true
 }
 
