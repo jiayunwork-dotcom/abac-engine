@@ -288,6 +288,11 @@ func (h *Handler) CreatePolicy(c *gin.Context) {
 		return
 	}
 
+	verified, err := h.Repo.GetPolicyByID(c.Request.Context(), tenantID, p.ID)
+	if err == nil && verified != nil {
+		p = *verified
+	}
+
 	yamlContent, _ := json.Marshal(p)
 	_ = h.Repo.CreatePolicyVersion(c.Request.Context(), &models.PolicyVersion{
 		PolicyID:   p.ID,
@@ -349,6 +354,11 @@ func (h *Handler) UpdatePolicy(c *gin.Context) {
 	if err := h.Repo.UpdatePolicy(c.Request.Context(), &p); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	verified, err := h.Repo.GetPolicyByID(c.Request.Context(), tenantID, id)
+	if err == nil && verified != nil {
+		p = *verified
 	}
 
 	yamlContent, _ := json.Marshal(p)

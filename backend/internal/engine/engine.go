@@ -177,64 +177,70 @@ func (e *ABACEngine) evaluatePolicies(snap *PolicySnapshot, candidates []int, re
 }
 
 func (e *ABACEngine) matchPolicy(p *models.Policy, req *models.AccessRequest) bool {
-	targetEmpty := expression.IsTargetEmpty(p.Target)
+	hasNonEmptySubject := !expression.IsGroupEmpty(p.Target.Subject)
+	hasNonEmptyResource := !expression.IsGroupEmpty(p.Target.Resource)
+	hasNonEmptyAction := !expression.IsGroupEmpty(p.Target.Action)
+	hasNonEmptyEnv := !expression.IsGroupEmpty(p.Target.Environment)
 	hasResTypeConstraint := hasNonWildcardSlice(p.ResourceTypes)
 	hasActionConstraint := hasNonWildcardSlice(p.Actions)
 
-	if targetEmpty && !hasResTypeConstraint && !hasActionConstraint {
+	hasAnyConstraint := hasNonEmptySubject || hasNonEmptyResource || hasNonEmptyAction || hasNonEmptyEnv ||
+		hasResTypeConstraint || hasActionConstraint
+
+	if !hasAnyConstraint {
 		return false
 	}
 
 	if hasResTypeConstraint {
 		reqResType, _ := req.Resource["type"].(string)
 		reqResType = strings.ToLower(reqResType)
-		matched := false
+		rtMatched := false
 		for _, rt := range p.ResourceTypes {
 			if strings.ToLower(rt) == reqResType {
-				matched = true
+				rtMatched = true
 				break
 			}
 		}
-		if !matched {
+		if !rtMatched {
 			return false
 		}
 	}
 
-	if p.Target.Action != nil {
+	if hasNonEmptyAction {
 		actionMap := map[string]interface{}{"name": req.Action}
 		ok, err := e.groupEval.EvaluateGroup(p.Target.Action, actionMap)
 		if err != nil || !ok {
 			return false
 		}
 	} else if hasActionConstraint {
-		reqAction := strings.ToLower(req.Action)
-		matched := false
+		reqAct := strings.ToLower(req.Action)
+		actMatched := false
 		for _, a := range p.Actions {
-			if strings.ToLower(a) == reqAction {
-				matched = true
+			if strings.ToLower(a) == reqAct {
+				actMatched = true
 				break
 			}
 		}
-		if !matched {
+		if !actMatched {
 			return false
 		}
 	}
 
-	if p.Target.Subject != nil {
+	if hasNonEmptySubject {
 		ok, err := e.groupEval.EvaluateGroup(p.Target.Subject, req.Subject)
 		if err != nil || !ok {
 			return false
 		}
 	}
 
-	if p.Target.Resource != nil {
+	if hasNonEmptyResource {
 		ok, err := e.groupEval.EvaluateGroup(p.Target.Resource, req.Resource)
 		if err != nil || !ok {
 			return false
 		}
 	}
 
-	if p.Target.Environment != nil {
+	if hasNonEmptyEnv {
 		envMap := make(map[string]interface{})
 		for k, v := range req.Environment {
 			envMap[k] = v
