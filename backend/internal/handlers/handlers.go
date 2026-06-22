@@ -173,7 +173,7 @@ func (h *Handler) ValidatePolicy(c *gin.Context) {
 		return
 	}
 	var p models.Policy
-	if err := yaml.Unmarshal([]byte(body.YAML), &p); err != nil {
+	if err := parsePolicyYAML(body.YAML, &p); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"valid": false, "errors": []string{"YAML parse error: " + err.Error()}})
 		return
 	}
@@ -213,6 +213,13 @@ func (h *Handler) ValidatePolicy(c *gin.Context) {
 		errs = append(errs, fmt.Sprintf("invalid effect: %s (must be permit/deny)", p.Effect))
 	}
 
+	hasConstraint := !expression.IsTargetEmpty(p.Target) ||
+		(len(p.ResourceTypes) > 0 && p.ResourceTypes[0] != "*") ||
+		(len(p.Actions) > 0 && p.Actions[0] != "*")
+	if !hasConstraint {
+		errs = append(errs, "policy has no constraints: at least one target condition or non-wildcard resource_type/action is required")
+	}
+
 	tenantID := h.getTenantID(c)
 	count, _ := h.Repo.CountTenantPolicies(c.Request.Context(), tenantID)
 	tenant := h.getTenant(c)
@@ -238,7 +245,7 @@ func (h *Handler) CreatePolicy(c *gin.Context) {
 	}
 
 	var p models.Policy
-	if err := yaml.Unmarshal([]byte(body.YAML), &p); err != nil {
+	if err := parsePolicyYAML(body.YAML, &p); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "YAML parse error: " + err.Error()})
 		return
 	}
@@ -265,6 +272,14 @@ func (h *Handler) CreatePolicy(c *gin.Context) {
 	}
 	if count >= tenant.MaxPolicies {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("policy quota exceeded: max %d", tenant.MaxPolicies)})
+		return
+	}
+
+	hasConstraint := !expression.IsTargetEmpty(p.Target) ||
+		(len(p.ResourceTypes) > 0 && p.ResourceTypes[0] != "*") ||
+		(len(p.Actions) > 0 && p.Actions[0] != "*")
+	if !hasConstraint {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "policy has no constraints: at least one target condition or non-wildcard resource_type/action is required"})
 		return
 	}
 
@@ -314,7 +329,7 @@ func (h *Handler) UpdatePolicy(c *gin.Context) {
 	}
 
 	var p models.Policy
-	if err := yaml.Unmarshal([]byte(body.YAML), &p); err != nil {
+	if err := parsePolicyYAML(body.YAML, &p); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "YAML parse error: " + err.Error()})
 		return
 	}
@@ -322,6 +337,14 @@ func (h *Handler) UpdatePolicy(c *gin.Context) {
 	p.TenantID = tenantID
 	p.CreatedAt = existing.CreatedAt
 	p.Version = existing.Version
+
+	hasConstraint := !expression.IsTargetEmpty(p.Target) ||
+		(len(p.ResourceTypes) > 0 && p.ResourceTypes[0] != "*") ||
+		(len(p.Actions) > 0 && p.Actions[0] != "*")
+	if !hasConstraint {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "policy has no constraints: at least one target condition or non-wildcard resource_type/action is required"})
+		return
+	}
 
 	if err := h.Repo.UpdatePolicy(c.Request.Context(), &p); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -442,7 +465,7 @@ func (h *Handler) SimulateBatch(c *gin.Context) {
 		var newDec *models.DecisionResult
 		if body.NewPolicyContent != "" && body.PolicyID != "" {
 			var tempPolicy models.Policy
-			if err := yaml.Unmarshal([]byte(body.NewPolicyContent), &tempPolicy); err == nil {
+			if err := parsePolicyYAML(body.NewPolicyContent, &tempPolicy); err == nil {
 				snap := h.Engine.GetTenantSnapshot(tenant.ID)
 				tempPolicies := make([]models.Policy, 0)
 				if snap != nil {
@@ -647,4 +670,55 @@ func (h *Handler) GetValidAttributes(c *gin.Context) {
 
 func (h *Handler) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "time": time.Now().Format(time.RFC3339)})
+}
+
+func normalizeYAMLValue(v interface{}) interface{} {
+	switch val := v.(type) {
+	case map[interface{}]interface{}:
+		m := make(map[string]interface{})
+		for k, vv := range val {
+			m[fmt.Sprintf("%v", k)] = normalizeYAMLValue(vv)
+		}
+		return m
+	case map[string]interface{}:
+		for k, vv := range val {
+			val[k] = normalizeYAMLValue(vv)
+		}
+		return val
+	case []interface{}:
+		for i, vv := range val {
+			val[i] = normalizeYAMLValue(vv)
+		}
+		return val
+	default:
+		return v
+	}
+}
+
+func normalizeConditionGroup(g *models.ConditionGroup) *models.ConditionGroup {
+	if g == nil {
+		return nil
+	}
+	for i := range g.Conditions {
+		g.Conditions[i].Value = normalizeYAMLValue(g.Conditions[i].Value)
+	}
+	for i := range g.Groups {
+		g.Groups[i] = *normalizeConditionGroup(&g.Groups[i])
+	}
+	return g
+}
+
+func normalizePolicyTarget(p *models.Policy) {
+	p.Target.Subject = normalizeConditionGroup(p.Target.Subject)
+	p.Target.Resource = normalizeConditionGroup(p.Target.Resource)
+	p.Target.Action = normalizeConditionGroup(p.Target.Action)
+	p.Target.Environment = normalizeConditionGroup(p.Target.Environment)
+}
+
+func parsePolicyYAML(yamlStr string, p *models.Policy) error {
+	if err := yaml.Unmarshal([]byte(yamlStr), p); err != nil {
+		return err
+	}
+	normalizePolicyTarget(p)
+	return nil
 }

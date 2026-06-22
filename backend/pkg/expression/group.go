@@ -52,7 +52,7 @@ func (g *GroupEvaluator) EvaluateGroup(group *models.ConditionGroup, attrs map[s
 	}
 
 	if len(results) == 0 {
-		return true, nil
+		return false, nil
 	}
 
 	if logic == "AND" {
@@ -143,3 +143,34 @@ var (
 		"device_os", "browser", "country", "region", "is_mfa_authenticated",
 	}
 )
+
+func IsGroupEmpty(g *models.ConditionGroup) bool {
+	if g == nil {
+		return true
+	}
+	if len(g.Conditions) == 0 && len(g.Groups) == 0 {
+		return true
+	}
+	if len(g.Conditions) > 0 {
+		for _, c := range g.Conditions {
+			if c.Attribute != "" || c.Operator != "" {
+				return false
+			}
+		}
+	}
+	if len(g.Groups) > 0 {
+		for _, sg := range g.Groups {
+			if !IsGroupEmpty(&sg) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func IsTargetEmpty(t models.Target) bool {
+	return IsGroupEmpty(t.Subject) &&
+		IsGroupEmpty(t.Resource) &&
+		IsGroupEmpty(t.Action) &&
+		IsGroupEmpty(t.Environment)
+}

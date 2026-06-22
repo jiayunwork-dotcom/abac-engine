@@ -177,6 +177,14 @@ func (e *ABACEngine) evaluatePolicies(snap *PolicySnapshot, candidates []int, re
 }
 
 func (e *ABACEngine) matchPolicy(p *models.Policy, req *models.AccessRequest) bool {
+	hasAnyConstraint := !expression.IsTargetEmpty(p.Target) ||
+		(len(p.ResourceTypes) > 0 && p.ResourceTypes[0] != "*") ||
+		(len(p.Actions) > 0 && p.Actions[0] != "*")
+
+	if !hasAnyConstraint {
+		return false
+	}
+
 	if p.Target.Subject != nil {
 		ok, err := e.groupEval.EvaluateGroup(p.Target.Subject, req.Subject)
 		if err != nil || !ok {
@@ -200,7 +208,8 @@ func (e *ABACEngine) matchPolicy(p *models.Policy, req *models.AccessRequest) bo
 			found := false
 			actLow := strings.ToLower(req.Action)
 			for _, a := range p.Actions {
-				if strings.ToLower(a) == actLow {
+				la := strings.ToLower(a)
+				if la == "*" || la == actLow {
 					found = true
 					break
 				}
