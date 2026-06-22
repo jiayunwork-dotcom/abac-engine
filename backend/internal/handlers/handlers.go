@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"abac-engine/internal/analysis"
 	"abac-engine/internal/audit"
 	"abac-engine/internal/cache"
 	"abac-engine/internal/engine"
@@ -30,6 +31,7 @@ type Handler struct {
 	SnapMgr     *snapshot.SnapshotManager
 	AuditWriter *audit.AuditWriter
 	AdminToken  string
+	Analyzer    *analysis.PolicyAnalyzer
 }
 
 func NewHandler(
@@ -49,6 +51,7 @@ func NewHandler(
 		SnapMgr:     sm,
 		AuditWriter: aw,
 		AdminToken:  adminToken,
+		Analyzer:    analysis.NewPolicyAnalyzer(),
 	}
 }
 
@@ -283,6 +286,9 @@ func (h *Handler) CreatePolicy(c *gin.Context) {
 		return
 	}
 
+	existingPolicies, _ := h.Repo.ListTenantAllPolicies(c.Request.Context(), tenantID)
+	conflicts := h.Analyzer.DetectConflicts(&p, existingPolicies, tenant.CombiningAlgorithm)
+
 	if err := h.Repo.CreatePolicy(c.Request.Context(), &p); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -306,10 +312,15 @@ func (h *Handler) CreatePolicy(c *gin.Context) {
 	_ = h.SnapMgr.RefreshTenant(c.Request.Context(), tenantID)
 	_ = h.RL.SetPolicyCount(c.Request.Context(), tenantID, count+1)
 
-	c.JSON(http.StatusCreated, p)
+	c.JSON(http.StatusCreated, gin.H{
+		"policy":    p,
+		"conflicts": conflicts,
+		"has_conflict": len(conflicts) > 0,
+	})
 }
 
 func (h *Handler) UpdatePolicy(c *gin.Context) {
+	tenant := h.getTenant(c)
 	tenantID := h.getTenantID(c)
 	id := c.Param("id")
 
@@ -351,6 +362,15 @@ func (h *Handler) UpdatePolicy(c *gin.Context) {
 		return
 	}
 
+	allPolicies, _ := h.Repo.ListTenantAllPolicies(c.Request.Context(), tenantID)
+	var otherPolicies []models.Policy
+	for _, pol := range allPolicies {
+		if pol.ID != id {
+			otherPolicies = append(otherPolicies, pol)
+		}
+	}
+	conflicts := h.Analyzer.DetectConflicts(&p, otherPolicies, tenant.CombiningAlgorithm)
+
 	if err := h.Repo.UpdatePolicy(c.Request.Context(), &p); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -372,7 +392,11 @@ func (h *Handler) UpdatePolicy(c *gin.Context) {
 	})
 
 	_ = h.SnapMgr.RefreshTenant(c.Request.Context(), tenantID)
-	c.JSON(http.StatusOK, p)
+	c.JSON(http.StatusOK, gin.H{
+		"policy":       p,
+		"conflicts":    conflicts,
+		"has_conflict": len(conflicts) > 0,
+	})
 }
 
 func (h *Handler) DeletePolicy(c *gin.Context) {
@@ -662,6 +686,21 @@ func (h *Handler) DeleteTenant(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+}
+
+func (h *Handler) GetDependencyGraph(c *gin.Context) {
+	tenant := h.getTenant(c)
+	tenantID := h.getTenantID(c)
+
+	policies, err := h.Repo.ListTenantAllPolicies(c.Request.Context(), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	graph := h.Analyzer.BuildDependencyGraph(policies, tenant.CombiningAlgorithm)
+
+	c.JSON(http.StatusOK, graph)
 }
 
 func (h *Handler) GetValidAttributes(c *gin.Context) {

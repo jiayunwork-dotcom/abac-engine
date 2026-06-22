@@ -1,5 +1,35 @@
 <template>
   <div class="page-container">
+    <div v-if="conflicts.length > 0" class="conflict-banner">
+      <el-alert
+        :title="'检测到 ' + conflicts.length + ' 个策略冲突'"
+        type="warning"
+        :closable="false"
+        show-icon
+      >
+        <template #default>
+          <div class="conflict-list">
+            <div v-for="(conflict, idx) in conflicts" :key="idx" class="conflict-item">
+              <span class="conflict-label">冲突策略：</span>
+              <a class="conflict-link" @click="goToPolicy(conflict.policy_id)">
+                {{ conflict.policy_id }}
+              </a>
+              <span class="conflict-desc">{{ conflict.overlap_desc }}</span>
+              <span class="conflict-winner">
+                胜出策略：<strong>{{ conflict.winner_policy_id }}</strong>
+                （{{ conflict.winner_reason }}）
+              </span>
+            </div>
+          </div>
+          <div class="conflict-actions">
+            <el-button size="small" type="primary" @click="dismissConflicts">
+              我知道了
+            </el-button>
+          </div>
+        </template>
+      </el-alert>
+    </div>
+
     <div class="page-header">
       <h1 class="page-title">
         <el-button text @click="goBack">
@@ -177,6 +207,8 @@ const yamlContent = ref('')
 const validationErrors = ref([])
 const saving = ref(false)
 const changeNote = ref('')
+const conflicts = ref([])
+const continueAnyway = ref(false)
 
 const defaultTarget = {
   subject: null,
@@ -280,6 +312,10 @@ const doValidate = async () => {
   } catch (e) {}
 }
 
+const goToPolicy = (policyId) => {
+  router.push(`/policies/${policyId}/edit`)
+}
+
 const doSave = async () => {
   saving.value = true
   try {
@@ -289,18 +325,31 @@ const doSave = async () => {
       ElMessage.error('校验不通过，无法保存')
       return
     }
+
     const payload = { yaml: yamlContent.value, change_note: changeNote.value, created_by: 'web-ui' }
+    let result
     if (isEdit.value) {
-      await updatePolicy(policyId.value, payload)
-      ElMessage.success('策略已更新')
+      result = await updatePolicy(policyId.value, payload)
     } else {
-      await createPolicy(payload)
-      ElMessage.success('策略已创建')
+      result = await createPolicy(payload)
     }
-    setTimeout(() => router.push('/policies'), 500)
+
+    ElMessage.success(isEdit.value ? '策略已更新' : '策略已创建')
+
+    if (result.has_conflict && result.conflicts && result.conflicts.length > 0) {
+      conflicts.value = result.conflicts
+      ElMessage.warning('检测到策略冲突，请查看页面上方的警告信息')
+    } else {
+      setTimeout(() => router.push('/policies'), 500)
+    }
   } finally {
     saving.value = false
   }
+}
+
+const dismissConflicts = () => {
+  conflicts.value = []
+  router.push('/policies')
 }
 
 const loadPolicy = async () => {
@@ -329,4 +378,41 @@ onMounted(async () => {
 .tip-text { font-size: 12px; color: #9ca3af; margin-left: 8px; }
 .cond-tabs { margin-top: 8px; }
 .error-line { font-size: 13px; line-height: 1.8; }
+
+.conflict-banner {
+  margin-bottom: 16px;
+}
+.conflict-list {
+  margin-top: 8px;
+}
+.conflict-item {
+  padding: 8px 0;
+  border-bottom: 1px dashed #e5e7eb;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.conflict-item:last-child {
+  border-bottom: none;
+}
+.conflict-label {
+  color: #6b7280;
+  margin-right: 4px;
+}
+.conflict-link {
+  color: #2563eb;
+  cursor: pointer;
+  text-decoration: underline;
+  margin-right: 8px;
+}
+.conflict-desc {
+  color: #6b7280;
+  margin-right: 8px;
+}
+.conflict-winner {
+  color: #b45309;
+}
+.conflict-actions {
+  margin-top: 12px;
+  text-align: right;
+}
 </style>

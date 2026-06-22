@@ -156,3 +156,37 @@ type SimulateDiff struct {
 	OldDecision  DecisionResult `json:"old_decision"`
 	NewDecision  DecisionResult `json:"new_decision"`
 }
+
+type PolicyConflict struct {
+	PolicyID        string   `json:"policy_id"`
+	OverlapDims     []string `json:"overlap_dims"`
+	OverlapDesc     string   `json:"overlap_desc"`
+	WinnerPolicyID  string   `json:"winner_policy_id"`
+	WinnerReason    string   `json:"winner_reason"`
+}
+
+type DependencyGraph struct {
+	Nodes []GraphNode `json:"nodes"`
+	Edges []GraphEdge `json:"edges"`
+}
+
+type GraphNode struct {
+	ID          string `json:"id"`
+	Description string `json:"description"`
+	Effect      string `json:"effect"`
+	Priority    int    `json:"priority"`
+	Level       string `json:"level"`
+}
+
+type GraphEdge struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Type   string `json:"type"`
+	Desc   string `json:"desc"`
+}
+
+const (
+	EdgeTypeConflict  = "conflict"
+	EdgeTypeOverride  = "override"
+	EdgeTypeComplement = "complement"
+)

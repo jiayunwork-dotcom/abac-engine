@@ -3,6 +3,10 @@
     <div class="page-header">
       <h1 class="page-title">策略管理</h1>
       <div>
+        <el-button @click="openDependencyGraph">
+          <el-icon><Connection /></el-icon>
+          依赖分析
+        </el-button>
         <el-button type="primary" @click="goCreate">
           <el-icon><Plus /></el-icon>
           新建策略
@@ -99,6 +103,33 @@
         <p>暂无策略数据</p>
       </div>
     </div>
+
+    <el-dialog
+      v-model="graphDialogVisible"
+      title="策略依赖分析图"
+      width="90vw"
+      :fullscreen="true"
+      :close-on-click-modal="false"
+      class="graph-dialog"
+    >
+      <div class="graph-content">
+        <div class="graph-stats">
+          <el-tag type="info">策略总数：{{ graphData.nodes.length }}</el-tag>
+          <el-tag type="danger">冲突关系：{{ conflictCount }}</el-tag>
+          <el-tag type="warning">覆盖关系：{{ overrideCount }}</el-tag>
+          <el-tag type="success">互补关系：{{ complementCount }}</el-tag>
+        </div>
+        <div class="graph-container-wrapper">
+          <ForceDirectedGraph
+            v-if="graphData.nodes.length > 0"
+            :nodes="graphData.nodes"
+            :edges="graphData.edges"
+            @node-click="handleNodeClick"
+          />
+          <el-empty v-else description="暂无依赖关系数据" />
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -106,9 +137,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, Refresh } from '@element-plus/icons-vue'
-import { listPolicies, deletePolicy, togglePolicy } from '@/api'
+import { Search, Plus, Refresh, Connection } from '@element-plus/icons-vue'
+import { listPolicies, deletePolicy, togglePolicy, getDependencyGraph } from '@/api'
 import dayjs from 'dayjs'
+import ForceDirectedGraph from '@/components/ForceDirectedGraph.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -117,6 +149,13 @@ const searchKeyword = ref('')
 const filterLevel = ref('')
 const filterEffect = ref('')
 const filterStatus = ref('')
+
+const graphDialogVisible = ref(false)
+const graphLoading = ref(false)
+const graphData = ref({
+  nodes: [],
+  edges: []
+})
 
 const levelText = {
   global: '全局',
@@ -138,6 +177,16 @@ const filteredPolicies = computed(() => {
   if (filterStatus.value) list = list.filter(p => p.status === filterStatus.value)
   return list.sort((a, b) => b.priority - a.priority || b.created_at - a.created_at)
 })
+
+const conflictCount = computed(() => 
+  graphData.value.edges.filter(e => e.type === 'conflict').length
+)
+const overrideCount = computed(() => 
+  graphData.value.edges.filter(e => e.type === 'override').length
+)
+const complementCount = computed(() => 
+  graphData.value.edges.filter(e => e.type === 'complement').length
+)
 
 const formatTime = (t) => dayjs(t).format('YYYY-MM-DD HH:mm:ss')
 
@@ -174,6 +223,27 @@ const doDelete = async (row) => {
   } catch (e) {}
 }
 
+const openDependencyGraph = async () => {
+  graphDialogVisible.value = true
+  graphLoading.value = true
+  try {
+    const data = await getDependencyGraph()
+    graphData.value = {
+      nodes: data.nodes || [],
+      edges: data.edges || []
+    }
+  } catch (e) {
+    ElMessage.error('加载依赖图失败')
+  } finally {
+    graphLoading.value = false
+  }
+}
+
+const handleNodeClick = (node) => {
+  graphDialogVisible.value = false
+  router.push(`/policies/${node.id}/edit`)
+}
+
 onMounted(loadPolicies)
 </script>
 
@@ -181,5 +251,32 @@ onMounted(loadPolicies)
 .mono {
   font-family: monospace;
   font-size: 12px;
+}
+
+.graph-dialog :deep(.el-dialog__body) {
+  padding: 0;
+  height: calc(100vh - 60px);
+  overflow: hidden;
+}
+
+.graph-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.graph-stats {
+  padding: 16px 24px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.graph-container-wrapper {
+  flex: 1;
+  padding: 0;
+  overflow: hidden;
 }
 </style>

@@ -45,6 +45,7 @@ export const updatePolicy = (id, data) => api.put(`/policies/${id}`, data)
 export const deletePolicy = (id) => api.delete(`/policies/${id}`)
 export const validatePolicy = (yaml) => api.post('/policies/validate', { yaml })
 export const togglePolicy = (id, status) => api.post(`/policies/${id}/status`, { status })
+export const getDependencyGraph = () => api.get('/policies/dependency/graph')
 
 export const listVersions = (policyId) => api.get(`/policies/${policyId}/versions`)
 export const rollbackPolicy = (policyId, data) => api.post(`/policies/${policyId}/rollback`, data)

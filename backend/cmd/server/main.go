@@ -93,13 +93,13 @@ func main() {
 			tenantAPI.POST("/simulate/batch", h.SimulateBatch)
 
 			tenantAPI.GET("/policies", h.ListPolicies)
+			tenantAPI.GET("/policies/dependency/graph", h.GetDependencyGraph)
+			tenantAPI.POST("/policies/validate", h.ValidatePolicy)
 			tenantAPI.GET("/policies/:id", h.GetPolicy)
 			tenantAPI.POST("/policies", h.CreatePolicy)
 			tenantAPI.PUT("/policies/:id", h.UpdatePolicy)
 			tenantAPI.DELETE("/policies/:id", h.DeletePolicy)
-			tenantAPI.POST("/policies/validate", h.ValidatePolicy)
 			tenantAPI.POST("/policies/:id/status", h.TogglePolicy)
-
 			tenantAPI.GET("/policies/:id/versions", h.ListVersions)
 			tenantAPI.POST("/policies/:id/rollback", h.RollbackPolicy)
 
