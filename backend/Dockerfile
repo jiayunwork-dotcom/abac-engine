@@ -1,15 +1,13 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 RUN apk add --no-cache git gcc musl-dev
 
 WORKDIR /app
 
-COPY go.mod go.sum ./
-RUN go mod download
-
+COPY go.mod ./
 COPY . .
 
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o /app/abac-server ./cmd/server
+RUN GOFLAGS=-mod=mod CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o /app/abac-server ./cmd/server
 
 FROM alpine:3.19
 

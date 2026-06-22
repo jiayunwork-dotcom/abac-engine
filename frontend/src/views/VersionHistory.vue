@@ -9,7 +9,7 @@
       </h1>
       <div>
         <el-button :disabled="!selectedA || !selectedB" @click="showDiff = true">
-          <el-icon><Comparison /></el-icon>
+          <el-icon><Switch /></el-icon>
           对比版本
         </el-button>
       </div>
@@ -127,7 +127,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Comparison, Clock } from '@element-plus/icons-vue'
+import { ArrowLeft, Switch, Clock } from '@element-plus/icons-vue'
 import { listVersions, rollbackPolicy } from '@/api'
 import dayjs from 'dayjs'
 import YAML from 'yaml'
